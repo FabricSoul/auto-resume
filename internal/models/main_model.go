@@ -22,6 +22,8 @@ type MainModel struct {
 	floatModel        tea.Model
 	showFloat         bool
 	isEditing         bool // Global editing state
+	width             int
+	height            int
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
@@ -40,6 +42,34 @@ func (m *MainModel) Init() tea.Cmd {
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle error messages first
+	if errMsg, ok := msg.(types.ErrorMsg); ok {
+		m.errorModel.SetError(errMsg.Error)
+		// Reset generating state in project model if it exists
+		if m.projectModel != nil {
+			m.projectModel.isGenerating = false
+		}
+		return m, nil
+	}
+
+	// Handle window size messages
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.errorModel != nil {
+			m.errorModel.width = msg.Width
+			m.errorModel.height = msg.Height
+		}
+	}
+
+	// If error is visible, let it handle messages first
+	if m.errorModel.visible {
+		var cmd tea.Cmd
+		newModel, cmd := m.errorModel.Update(msg)
+		m.errorModel = newModel.(*ErrorModel)
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case types.ShowFloatInputMsg:
 		m.floatModel = NewFloatInputModel(msg.Prompt, msg.InitialValue, msg.Callback)
@@ -50,18 +80,17 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showFloat = false
 		m.isEditing = false
 		return m, nil
+	case types.GenerationCompleteMsg:
+		// Ensure generating state is reset when generation completes
+		if m.projectModel != nil {
+			m.projectModel.isGenerating = false
+		}
+		return m, nil
 	}
 
 	if m.showFloat {
 		var cmd tea.Cmd
 		m.floatModel, cmd = m.floatModel.Update(msg)
-		return m, cmd
-	}
-
-	if m.errorModel.visible {
-		var cmd tea.Cmd
-		newModel, cmd := m.errorModel.Update(msg)
-		m.errorModel = newModel.(*ErrorModel)
 		return m, cmd
 	}
 

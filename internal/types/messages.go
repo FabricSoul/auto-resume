@@ -19,3 +19,5 @@ type ShowFloatInputMsg struct {
 	InitialValue string
 	Callback     func(string)
 }
+
+type GenerationCompleteMsg struct{}

@@ -123,6 +123,19 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// Reset generating state when going back to splash screen
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
+			m.isGenerating = false
+			return m, func() tea.Msg {
+				return types.TransitionMsg{To: types.StateSplash}
+			}
+		}
+
+		// Don't process other key events while generating
+		if m.isGenerating {
+			return m, nil
+		}
+
 		if m.showLLMSelector {
 			switch msg.String() {
 			case "esc":
@@ -146,10 +159,6 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, func() tea.Msg {
-				return types.TransitionMsg{To: types.StateSplash}
-			}
 		case "tab":
 			m.focusArea = (m.focusArea + 1) % 3
 		case "shift+tab":
@@ -520,11 +529,13 @@ type GollmResponse struct {
 
 // Add this method to ProjectDetailModel
 func (m *ProjectDetailModel) generateResume(jobDescription string) tea.Msg {
-	// Set generating state
-	m.isGenerating = true
+	if m.isGenerating {
+		return nil // Prevent multiple generations at once
+	}
 
+	m.isGenerating = true
 	return func() tea.Msg {
-		// Defer resetting the generating state
+		// Always reset the generating state, even if there's an error
 		defer func() {
 			m.isGenerating = false
 		}()
@@ -541,13 +552,14 @@ func (m *ProjectDetailModel) generateResume(jobDescription string) tea.Msg {
 			return types.ErrorMsg{Error: fmt.Errorf("failed to load project config: %w", err)}
 		}
 
-		// Create a new LLM instance
+		// Create a new LLM instance with debug logging
 		llm, err := gollm.NewLLM(
 			gollm.SetProvider(selectedModel.Provider),
 			gollm.SetModel(selectedModel.Model),
+			gollm.SetAPIKey(selectedModel.APIKey),
 		)
 		if err != nil {
-			return types.ErrorMsg{Error: fmt.Errorf("failed to create LLM: %w", err)}
+			return types.ErrorMsg{Error: fmt.Errorf("failed to create LLM instance: %w", err)}
 		}
 
 		// Prepare the prompt
@@ -570,11 +582,28 @@ Please provide the modified resume in LaTeX format.`
 		promptText = fmt.Sprintf(promptText, config.ResumeInput, jobDescription)
 		prompt := gollm.NewPrompt(promptText)
 
-		// Generate response
+		// Generate response with context and error handling
 		ctx := context.Background()
 		response, err := llm.Generate(ctx, prompt)
 		if err != nil {
-			return types.ErrorMsg{Error: fmt.Errorf("failed to generate response: %w", err)}
+			// Handle the error based on the error message
+			errMsg := err.Error()
+			switch {
+			case strings.Contains(errMsg, "invalid API key"):
+				return types.ErrorMsg{Error: fmt.Errorf("invalid API key for %s", selectedModel.Provider)}
+			case strings.Contains(errMsg, "rate limit"):
+				return types.ErrorMsg{Error: fmt.Errorf("rate limit exceeded for %s", selectedModel.Provider)}
+			case strings.Contains(errMsg, "model not found"):
+				return types.ErrorMsg{Error: fmt.Errorf("model %s not found for %s", selectedModel.Model, selectedModel.Provider)}
+			case strings.Contains(errMsg, "connection refused"):
+				return types.ErrorMsg{Error: fmt.Errorf("connection to %s failed - is the service running?", selectedModel.Provider)}
+			default:
+				return types.ErrorMsg{Error: fmt.Errorf("LLM error: %w", err)}
+			}
+		}
+
+		if response == "" {
+			return types.ErrorMsg{Error: errors.New("received empty response from LLM")}
 		}
 
 		// Update project config with new output
@@ -594,6 +623,7 @@ Please provide the modified resume in LaTeX format.`
 		m.outputs = config.Outputs
 		m.selectedOutputIndex = len(m.outputs) - 1
 
-		return nil
+		// If we get here, generation was successful
+		return types.GenerationCompleteMsg{} // Add this new message type
 	}
 }

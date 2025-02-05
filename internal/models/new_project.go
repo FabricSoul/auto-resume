@@ -2,6 +2,7 @@ package models
 
 import (
 	"github.com/FabricSoul/auto-resume/internal/types"
+	"github.com/FabricSoul/auto-resume/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -12,17 +13,6 @@ type NewProjectModel struct {
 	width       int
 	height      int
 }
-
-var (
-	inputStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(subtle).
-			Padding(1)
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			MarginTop(1)
-)
 
 func NewProjectScreen(pm *types.ProjectManager) *NewProjectModel {
 	return &NewProjectModel{
@@ -89,11 +79,11 @@ func (m *NewProjectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *NewProjectModel) View() string {
-	content := title.Render("Create New Project") + "\n\n"
+	content := ui.Title.Render("Create New Project") + "\n\n"
 	content += "Enter project name:\n"
-	content += inputStyle.Render(m.projectName + "█")
+	content += ui.Input.Render(m.projectName + "█")
 
-	help := helpStyle.Render("enter: create • esc: cancel")
+	help := ui.Help.Render("enter: create • esc: cancel")
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,

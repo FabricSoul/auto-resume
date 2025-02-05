@@ -1,6 +1,7 @@
 package models
 
 import (
+	"github.com/FabricSoul/auto-resume/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -11,23 +12,6 @@ type ErrorModel struct {
 	height  int
 	visible bool
 }
-
-var (
-	errorBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF0000")).
-			Padding(1).
-			Width(50)
-
-	errorTitle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Bold(true).
-			MarginBottom(1)
-
-	errorHelp = lipgloss.NewStyle().
-			Foreground(subtle).
-			MarginTop(1)
-)
 
 func NewErrorModel() *ErrorModel {
 	return &ErrorModel{
@@ -64,11 +48,11 @@ func (m *ErrorModel) View() string {
 		return ""
 	}
 
-	content := errorTitle.Render("Error") + "\n"
+	content := ui.ErrorTitle.Render("Error") + "\n"
 	content += m.err.Error() + "\n"
-	content += errorHelp.Render("press esc or enter to dismiss")
+	content += ui.Help.Render("press esc or enter to dismiss")
 
-	box := errorBox.Render(content)
+	box := ui.ErrorBox.Render(content)
 
 	// Center the error box
 	return lipgloss.Place(

@@ -2,6 +2,7 @@ package models
 
 import (
 	"github.com/FabricSoul/auto-resume/internal/types"
+	"github.com/FabricSoul/auto-resume/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -13,38 +14,6 @@ type SplashModel struct {
 	// Add selected project index for navigation
 	selectedIndex int
 }
-
-var (
-	// Style definitions
-	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
-
-	list = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtle).
-		Padding(1).
-		MarginRight(2)
-
-	details = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtle).
-		Padding(1)
-
-	title = lipgloss.NewStyle().
-		Foreground(highlight).
-		Bold(true).
-		MarginLeft(1).
-		MarginBottom(1)
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(subtle).
-			MarginTop(1)
-
-	selectedItem = lipgloss.NewStyle().
-			Foreground(special).
-			Bold(true)
-)
 
 func NewSplashModel(pm *types.ProjectManager) *SplashModel {
 	return &SplashModel{
@@ -91,14 +60,14 @@ func (m *SplashModel) View() string {
 	detailsWidth := m.width - listWidth - 4 // Account for margins/padding
 
 	// Projects list section
-	projectsList := title.Render("Projects") + "\n"
+	projectsList := ui.Title.Render("Projects") + "\n"
 	if len(m.project.Projects) == 0 {
 		projectsList += "No projects yet"
 	} else {
 		for i, proj := range m.project.Projects {
 			item := proj.Name
 			if i == m.selectedIndex {
-				item = selectedItem.Render("► " + item)
+				item = ui.SelectedItem.Render("► " + item)
 			} else {
 				item = "  " + item
 			}
@@ -107,7 +76,7 @@ func (m *SplashModel) View() string {
 	}
 
 	// Details section
-	detailsContent := title.Render("Project Details") + "\n"
+	detailsContent := ui.Title.Render("Project Details") + "\n"
 	if len(m.project.Projects) > 0 && m.selectedIndex < len(m.project.Projects) {
 		selectedProject := m.project.Projects[m.selectedIndex]
 		detailsContent += "Name: " + selectedProject.Name + "\n"
@@ -119,11 +88,11 @@ func (m *SplashModel) View() string {
 	}
 
 	// Help section
-	help := helpStyle.Render("n: New Project • q: Quit • ↑/↓: Navigate")
+	help := ui.Help.Render("n: New Project • q: Quit • ↑/↓: Navigate")
 
 	// Layout sections
-	leftSection := list.Width(listWidth).Height(m.height - 4).Render(projectsList)
-	rightSection := details.Width(detailsWidth).Height(m.height - 4).Render(detailsContent)
+	leftSection := ui.BaseList.Width(listWidth).Height(m.height - 4).Render(projectsList)
+	rightSection := ui.BaseDetails.Width(detailsWidth).Height(m.height - 4).Render(detailsContent)
 
 	// Combine horizontally
 	content := lipgloss.JoinHorizontal(lipgloss.Top, leftSection, rightSection)

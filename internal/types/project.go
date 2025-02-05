@@ -69,12 +69,25 @@ func (pm *ProjectManager) initializeConfig() error {
 }
 
 func (pm *ProjectManager) AddProject(name string) error {
+	// Check if project with same name exists
+	for _, p := range pm.Projects {
+		if p.Name == name {
+			return fmt.Errorf("project with name '%s' already exists", name)
+		}
+	}
+
 	project := Project{
-		Name:      name,
-		CreatedAt: time.Now(),
+		Name:       name,
+		CreatedAt:  time.Now(),
+		LastOpened: time.Now(),
 		Path:      filepath.Join(pm.baseDir, name),
 	}
 	
+	// Create project directory
+	if err := os.MkdirAll(project.Path, 0755); err != nil {
+		return fmt.Errorf("failed to create project directory: %w", err)
+	}
+
 	pm.Projects = append(pm.Projects, project)
 	return nil
 }

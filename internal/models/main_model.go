@@ -14,6 +14,7 @@ type MainModel struct {
 
 	// Models
 	splashScreenModel *SplashModel
+	newProjectModel   *NewProjectModel
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
@@ -38,10 +39,15 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.To {
 		case types.StateNewProject:
-			// if m.newProjectModel == nil {
-			// 	m.newProjectModel = newproject.CreateNewProjectModel(m.projects)
-			// }
-			// m.activeModel = m.newProjectModel
+			if m.newProjectModel == nil {
+				m.newProjectModel = NewProjectScreen(m.projects)
+			}
+			m.activeModel = m.newProjectModel
+		case types.StateSplash:
+			if m.splashScreenModel == nil {
+				m.splashScreenModel = NewSplashModel(m.projects)
+			}
+			m.activeModel = m.splashScreenModel
 		}
 	}
 	var cmd tea.Cmd

@@ -7,3 +7,7 @@ type TransitionMsg struct {
 
 type BackMsg struct {
 }
+
+type ErrorMsg struct {
+	Error error
+}

@@ -1,18 +1,19 @@
 package types
 
 import (
-	// "github.com/pelletier/go-toml/v2"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type Project struct {
 	Name       string    `toml:"name"`
-	Path       string    `toml: "path"`
-	CreatedAt  time.Time `toml: "created_at"`
-	LastOpened time.Time `toml: "last_opened"`
+	Path       string    `toml:"path"`
+	CreatedAt  time.Time `toml:"created_at"`
+	LastOpened time.Time `toml:"last_opened"`
 }
 
 type ProjectManager struct {
@@ -21,13 +22,27 @@ type ProjectManager struct {
 	Projects   []Project
 }
 
+// Add a new type to match the config structure
+type Config struct {
+	UserConfigPath string    `toml:"user_config_path"`
+	Projects       []Project `toml:"projects"`
+	Models         []AIModel `toml:"models"`
+}
+
+type AIModel struct {
+	Name     string `toml:"name"`
+	Provider string `toml:"provider"`
+	Model    string `toml:"model"`
+	APIKey   string `toml:"api_key"`
+}
+
 func NewPrejectManager() (*ProjectManager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 
-	baseDir := filepath.Join(homeDir, ".local", "share", "autoResume")
+	baseDir := filepath.Join(homeDir, ".local", "share", "auto-resume")
 	configPath := filepath.Join(baseDir, "config.toml")
 
 	// Create base directory if it doesn't exist
@@ -53,16 +68,57 @@ func (pm *ProjectManager) initializeConfig() error {
 	// Check if config file exists
 	_, err := os.Stat(pm.configPath)
 	if os.IsNotExist(err) {
-		// Create default config content
-		defaultConfig := `user_config_path = ""`
+		// Create default config with empty arrays
+		defaultConfig := Config{
+			UserConfigPath: "",
+			Projects:       []Project{},
+			Models:         []AIModel{},
+		}
+
+		data, err := toml.Marshal(defaultConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal default config: %w", err)
+		}
 
 		// Write default config to file
-		err = os.WriteFile(pm.configPath, []byte(defaultConfig), 0644)
-		if err != nil {
+		if err := os.WriteFile(pm.configPath, data, 0644); err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}
 	} else if err != nil {
 		return fmt.Errorf("failed to check config file: %w", err)
+	}
+
+	// Load existing config
+	data, err := os.ReadFile(pm.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config Config
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Update ProjectManager with loaded projects
+	pm.Projects = config.Projects
+
+	return nil
+}
+
+func (pm *ProjectManager) SaveConfig() error {
+	config := Config{
+		UserConfigPath: "", // Default empty string as shown in spec
+		Projects:       pm.Projects,
+		Models:         []AIModel{}, // Empty for now, will be implemented later
+	}
+
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(pm.configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
@@ -76,19 +132,42 @@ func (pm *ProjectManager) AddProject(name string) error {
 		}
 	}
 
-	project := Project{
-		Name:       name,
-		CreatedAt:  time.Now(),
-		LastOpened: time.Now(),
-		Path:      filepath.Join(pm.baseDir, name),
+	// Create projects directory if it doesn't exist
+	projectsDir := filepath.Join(pm.baseDir, "projects")
+	if err := os.MkdirAll(projectsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create projects directory: %w", err)
 	}
-	
-	// Create project directory
-	if err := os.MkdirAll(project.Path, 0755); err != nil {
+
+	// Create project-specific directory
+	projectDir := filepath.Join(projectsDir, name)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		return fmt.Errorf("failed to create project directory: %w", err)
 	}
 
+	project := Project{
+		Name:       name,
+		Path:       projectDir,
+		CreatedAt:  time.Now(),
+		LastOpened: time.Now(),
+	}
+
+	// Create project-specific config file
+	projectConfig := filepath.Join(projectDir, "project.toml")
+	defaultProjectConfig := fmt.Sprintf(`name = "%s"
+model = ""
+resume_input = ""`, name)
+
+	if err := os.WriteFile(projectConfig, []byte(defaultProjectConfig), 0644); err != nil {
+		return fmt.Errorf("failed to create project config: %w", err)
+	}
+
 	pm.Projects = append(pm.Projects, project)
+
+	// Save the updated config
+	if err := pm.SaveConfig(); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
 	return nil
 }
 

@@ -11,7 +11,6 @@ type NewProjectModel struct {
 	projectName string
 	width       int
 	height      int
-	err         error
 }
 
 var (
@@ -53,13 +52,19 @@ func (m *NewProjectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyEnter:
 			if m.projectName == "" {
-				m.err = types.ErrEmptyProjectName
-				return m, nil
+				return m, func() tea.Msg {
+					return types.ErrorMsg{
+						Error: types.ErrEmptyProjectName,
+					}
+				}
 			}
 
 			if err := m.project.AddProject(m.projectName); err != nil {
-				m.err = err
-				return m, nil
+				return m, func() tea.Msg {
+					return types.ErrorMsg{
+						Error: err,
+					}
+				}
 			}
 
 			return m, func() tea.Msg {
@@ -87,10 +92,6 @@ func (m *NewProjectModel) View() string {
 	content := title.Render("Create New Project") + "\n\n"
 	content += "Enter project name:\n"
 	content += inputStyle.Render(m.projectName + "█")
-
-	if m.err != nil {
-		content += errorStyle.Render("\nError: " + m.err.Error())
-	}
 
 	help := helpStyle.Render("enter: create • esc: cancel")
 

@@ -15,11 +15,13 @@ type MainModel struct {
 	// Models
 	splashScreenModel *SplashModel
 	newProjectModel   *NewProjectModel
+	errorModel        *ErrorModel
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
 	return &MainModel{
-		projects: pm,
+		projects:   pm,
+		errorModel: NewErrorModel(),
 	}
 }
 
@@ -32,6 +34,25 @@ func (m *MainModel) Init() tea.Cmd {
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	// Handle error messages first
+	switch msg := msg.(type) {
+	case types.ErrorMsg:
+		m.errorModel.SetError(msg.Error)
+		return m, nil
+	case tea.KeyMsg:
+		// Allow error dismissal from any screen if error is visible
+		if m.errorModel.visible {
+			if msg.Type == tea.KeyEsc || msg.Type == tea.KeyEnter {
+				m.errorModel.visible = false
+				return m, nil
+			}
+			return m, nil
+		}
+	}
+
+	// Handle state transitions
 	switch msg := msg.(type) {
 	case types.TransitionMsg:
 		m.previousState = m.State
@@ -50,11 +71,15 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeModel = m.splashScreenModel
 		}
 	}
-	var cmd tea.Cmd
+
+	// Update active model
 	m.activeModel, cmd = m.activeModel.Update(msg)
 	return m, cmd
 }
 
 func (m *MainModel) View() string {
+	if m.errorModel.visible {
+		return m.errorModel.View()
+	}
 	return m.activeModel.View()
 }

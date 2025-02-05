@@ -1,9 +1,7 @@
-// internal/models/model.go
+// internal/models/main_model.go
 package models
 
 import (
-	newproject "github.com/FabricSoul/auto-resume/internal/models/new-project"
-	"github.com/FabricSoul/auto-resume/internal/models/splash"
 	"github.com/FabricSoul/auto-resume/internal/types"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,8 +13,7 @@ type MainModel struct {
 	projects      *types.ProjectManager
 
 	// Models
-	splashScreenModel *splash.SplashModel
-	newProjectModel   *newproject.NewProjectModel
+	splashScreenModel *SplashModel
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
@@ -27,7 +24,7 @@ func NewMainModel(pm *types.ProjectManager) *MainModel {
 
 func (m *MainModel) Init() tea.Cmd {
 	if m.activeModel == nil {
-		m.activeModel = splash.NewSplasheModel(m.projects)
+		m.activeModel = NewSplashModel(m.projects)
 		m.State = types.StateSplash
 	}
 	return m.activeModel.Init()
@@ -41,10 +38,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.To {
 		case types.StateNewProject:
-			if m.newProjectModel == nil {
-				m.newProjectModel = newproject.CreateNewProjectModel(m.projects)
-			}
-			m.activeModel = m.newProjectModel
+			// if m.newProjectModel == nil {
+			// 	m.newProjectModel = newproject.CreateNewProjectModel(m.projects)
+			// }
+			// m.activeModel = m.newProjectModel
 		}
 	}
 	var cmd tea.Cmd

@@ -16,7 +16,8 @@ func main() {
 		fmt.Errorf("Failed to init pm: %v \n", err)
 		os.Exit(1)
 	}
-	p := tea.NewProgram(models.NewMainModel(pm), tea.WithMouseCellMotion(), tea.WithAltScreen())
+	p := tea.NewProgram(models.NewMainModel(pm), tea.WithMouseCellMotion(),
+		tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("%s", err)

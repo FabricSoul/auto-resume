@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/pelletier/go-toml/v2"
+	// "github.com/pelletier/go-toml/v2"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,7 +15,8 @@ type Project struct {
 }
 
 type ProjectManager struct {
-	baseDir string
+	baseDir    string
+	Projects   []Project
 }
 
 func NewPrejectManager() (*ProjectManager, error) {
@@ -29,5 +30,25 @@ func NewPrejectManager() (*ProjectManager, error) {
 		return nil, err
 	}
 
-	return &ProjectManager{baseDir: baseDir}, nil
+	// Initialize with empty projects slice
+	return &ProjectManager{
+		baseDir:  baseDir,
+		Projects: make([]Project, 0),
+	}, nil
+}
+
+func (pm *ProjectManager) AddProject(name string) error {
+	project := Project{
+		Name:      name,
+		CreatedAt: time.Now(),
+		Path:      filepath.Join(pm.baseDir, name),
+	}
+	
+	pm.Projects = append(pm.Projects, project)
+	return nil
+}
+
+func (pm *ProjectManager) LoadProjects() error {
+	// TODO: Implement loading projects from disk
+	return nil
 }

@@ -82,13 +82,13 @@ user_config_path = "$HOME/.config/auto-resume"
 name = "First Project" # need to be unique
 created_at = "2025-02-05T08:36:26-05:00"
 last_opened = "2025-02-05T08:37:50-05:00"
-path = "path/to/project.toml"
+path = "$HOME/.local/share/atuo-resume/projects/First Project"
 
 [[projects]]
 name = "Second Project"
 created_at = "2025-02-05T08:36:26-05:00"
 last_opened = "2025-02-05T08:37:50-05:00"
-path = "path/to/project.toml"
+path = "$HOME/.local/share/atuo-resume/projects/Second Project"
 
 [[models]]
 name = "Model 0" # need to be unique

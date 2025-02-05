@@ -51,7 +51,7 @@ func (m *NewProjectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return types.ErrorMsg{Error: types.ErrEmptyProjectName}
 				}
 			}
-			if err := m.projects.CreateProject(m.projectName); err != nil {
+			if err := m.projects.AddProject(m.projectName); err != nil {
 				return m, func() tea.Msg {
 					return types.ErrorMsg{Error: err}
 				}

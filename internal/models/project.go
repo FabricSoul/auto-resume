@@ -1,16 +1,21 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"errors"
+
 	"github.com/FabricSoul/auto-resume/internal/types"
 	"github.com/FabricSoul/auto-resume/internal/ui"
+	"github.com/teilomillet/gollm"
 )
 
 const (
@@ -69,6 +74,7 @@ type ProjectDetailModel struct {
 	llmList          []types.AIModel
 	selectedLLM      types.AIModel
 	projects         *types.ProjectManager
+	isGenerating     bool
 }
 
 // NewProjectDetailModel constructs and initializes the project detail model.
@@ -148,6 +154,76 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusArea = (m.focusArea + 1) % 3
 		case "shift+tab":
 			m.focusArea = (m.focusArea + 2) % 3
+		case "i":
+			switch m.focusArea {
+			case FocusOverview:
+				var prompt, initialValue string
+				var callback func(string)
+
+				switch m.overviewField {
+				case OverviewFieldProjectName:
+					prompt = "Enter Project Name"
+					initialValue = m.overviewProjectName
+					callback = func(value string) {
+						m.overviewProjectName = value
+					}
+				case OverviewFieldResumeInput:
+					prompt = "Enter Resume Input"
+					initialValue = m.resumeInput
+					callback = func(value string) {
+						m.resumeInput = value
+					}
+				}
+
+				if callback != nil {
+					return m, func() tea.Msg {
+						return types.ShowFloatInputMsg{
+							Prompt:       prompt,
+							InitialValue: initialValue,
+							Callback:     callback,
+						}
+					}
+				}
+			case FocusJob:
+				var prompt, initialValue string
+				var callback func(string)
+
+				current := &m.outputs[m.selectedOutputIndex]
+				switch m.jobField {
+				case JobFieldName:
+					prompt = "Enter Job Name"
+					initialValue = current.Name
+					callback = func(value string) {
+						current.Name = value
+					}
+				case JobFieldDescription:
+					prompt = "Enter Job Description"
+					initialValue = current.JobDescription
+					callback = func(value string) {
+						current.JobDescription = value
+					}
+				}
+
+				if callback != nil {
+					return m, func() tea.Msg {
+						return types.ShowFloatInputMsg{
+							Prompt:       prompt,
+							InitialValue: initialValue,
+							Callback:     callback,
+						}
+					}
+				}
+			}
+		case "a":
+			if m.focusArea == FocusOutputs {
+				newOutput := types.Output{
+					Name:           "New Output",
+					JobDescription: "",
+				}
+				m.outputs = append(m.outputs, newOutput)
+				m.selectedOutputIndex = len(m.outputs) - 1
+				return m, m.saveProjectConfig
+			}
 		case "l", "enter":
 			if m.focusArea == FocusOverview && m.overviewField == OverviewFieldLLM {
 				m.showLLMSelector = true
@@ -192,13 +268,13 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.outputs) == 0 {
 				break
 			}
-			current := &m.outputs[m.selectedOutputIndex]
 
 			switch msg.String() {
 			case "i":
 				var prompt, initialValue string
 				var callback func(string)
 
+				current := &m.outputs[m.selectedOutputIndex]
 				switch m.jobField {
 				case JobFieldName:
 					prompt = "Enter Job Name"
@@ -212,12 +288,6 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					callback = func(value string) {
 						current.JobDescription = value
 					}
-				case JobFieldGenerate:
-					// No input needed for generate field
-					break
-				case JobFieldSavePDF:
-					// No input needed for save PDF field
-					break
 				}
 
 				if callback != nil {
@@ -233,13 +303,9 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.jobField {
 				case JobFieldGenerate:
-					if m.selectedLLMIndex < len(m.llmOptions) {
-						current.GeneratedOutput = m.resumeInput + "\nGenerated for job: " + current.JobDescription +
-							"\n[Using model: " + m.llmOptions[m.selectedLLMIndex].Name + "]"
-					} else {
-						return m, func() tea.Msg {
-							return types.ErrorMsg{Error: fmt.Errorf("no LLM selected")}
-						}
+					currentOutput := m.outputs[m.selectedOutputIndex]
+					return m, func() tea.Msg {
+						return m.generateResume(currentOutput.JobDescription)
 					}
 				case JobFieldSavePDF:
 					return m, m.saveCurrentOutputToPDF
@@ -251,6 +317,16 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *ProjectDetailModel) View() string {
+	if m.isGenerating {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			ui.FloatBox.Render("Generating resume...\nPlease stand by..."),
+		)
+	}
+
 	if m.showLLMSelector {
 		return m.renderLLMSelector()
 	}
@@ -277,7 +353,14 @@ func (m *ProjectDetailModel) View() string {
 func (m *ProjectDetailModel) renderOverviewSection() string {
 	title := ui.Title.Render("Project Overview")
 	nameField := "Project Name: " + m.overviewProjectName
-	resumeField := "Resume Input: " + m.resumeInput
+
+	// Truncate resume input if longer than 10 chars
+	resumePreview := m.resumeInput
+	if len(resumePreview) > 10 {
+		resumePreview = resumePreview[:10] + "..."
+	}
+	resumeField := "Resume Input: " + resumePreview
+
 	llmField := "LLM: "
 	if len(m.llmOptions) > 0 {
 		llmField += m.llmOptions[m.selectedLLMIndex].Name
@@ -285,7 +368,7 @@ func (m *ProjectDetailModel) renderOverviewSection() string {
 		llmField += "None"
 	}
 
-	// Highlight the active field if the overview section has focus.
+	// Highlight the active field if the overview section has focus
 	if m.focusArea == FocusOverview {
 		switch m.overviewField {
 		case OverviewFieldProjectName:
@@ -326,8 +409,22 @@ func (m *ProjectDetailModel) renderJobSection() string {
 	if len(m.outputs) > 0 {
 		currentOutput = m.outputs[m.selectedOutputIndex]
 	}
+
+	// Truncate job description if longer than 10 chars
+	descPreview := currentOutput.JobDescription
+	if len(descPreview) > 10 {
+		descPreview = descPreview[:10] + "..."
+	}
+
+	// Truncate output preview if longer than 10 chars
+	outputPreview := currentOutput.GeneratedOutput
+	if len(outputPreview) > 10 {
+		outputPreview = outputPreview[:10] + "..."
+	}
+
 	nameField := "Output Name: " + currentOutput.Name
-	descField := "Job Description: " + currentOutput.JobDescription
+	descField := "Job Description: " + descPreview
+	outputField := "Generated Output: " + outputPreview
 	generateButton := "[ Generate ]"
 	saveButton := "[ Save to PDF ]"
 
@@ -345,7 +442,7 @@ func (m *ProjectDetailModel) renderJobSection() string {
 		}
 	}
 
-	content := title + "\n" + nameField + "\n" + descField + "\n\n" + generateButton + "    " + saveButton
+	content := title + "\n" + nameField + "\n" + descField + "\n" + outputField + "\n\n" + generateButton + "    " + saveButton
 	return content
 }
 
@@ -402,4 +499,101 @@ func (m *ProjectDetailModel) renderLLMSelector() string {
 		lipgloss.Center,
 		ui.FloatBox.Render(content),
 	)
+}
+
+// Add these new types for the API request/response
+type GollmRequest struct {
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+}
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type GollmResponse struct {
+	Choices []struct {
+		Message Message `json:"message"`
+	} `json:"choices"`
+}
+
+// Add this method to ProjectDetailModel
+func (m *ProjectDetailModel) generateResume(jobDescription string) tea.Msg {
+	// Set generating state
+	m.isGenerating = true
+
+	return func() tea.Msg {
+		// Defer resetting the generating state
+		defer func() {
+			m.isGenerating = false
+		}()
+
+		if len(m.llmOptions) == 0 || m.selectedLLMIndex >= len(m.llmOptions) {
+			return types.ErrorMsg{Error: errors.New("no LLM model selected")}
+		}
+
+		selectedModel := m.llmOptions[m.selectedLLMIndex]
+
+		// Load project config to get resume input
+		config, err := types.LoadProjectConfig(m.projectDir)
+		if err != nil {
+			return types.ErrorMsg{Error: fmt.Errorf("failed to load project config: %w", err)}
+		}
+
+		// Create a new LLM instance
+		llm, err := gollm.NewLLM(
+			gollm.SetProvider(selectedModel.Provider),
+			gollm.SetModel(selectedModel.Model),
+		)
+		if err != nil {
+			return types.ErrorMsg{Error: fmt.Errorf("failed to create LLM: %w", err)}
+		}
+
+		// Prepare the prompt
+		promptText := `You are a professional resume writer. Your task is to modify the given resume to better target a specific job description.
+Follow these rules:
+1. Keep the same LaTeX format
+2. Highlight relevant skills and experiences
+3. Use keywords from the job description
+4. Be concise and professional
+5. Do not invent new experiences
+
+Original Resume:
+%s
+
+Job Description:
+%s
+
+Please provide the modified resume in LaTeX format.`
+
+		promptText = fmt.Sprintf(promptText, config.ResumeInput, jobDescription)
+		prompt := gollm.NewPrompt(promptText)
+
+		// Generate response
+		ctx := context.Background()
+		response, err := llm.Generate(ctx, prompt)
+		if err != nil {
+			return types.ErrorMsg{Error: fmt.Errorf("failed to generate response: %w", err)}
+		}
+
+		// Update project config with new output
+		outputName := time.Now().Format("2006-01-02-15-04-05")
+		newOutput := types.Output{
+			Name:            outputName,
+			JobDescription:  jobDescription,
+			GeneratedOutput: response,
+		}
+
+		config.Outputs = append(config.Outputs, newOutput)
+		if err := types.SaveProjectConfig(m.projectDir, config); err != nil {
+			return types.ErrorMsg{Error: fmt.Errorf("failed to save project config: %w", err)}
+		}
+
+		// Update model's outputs list
+		m.outputs = config.Outputs
+		m.selectedOutputIndex = len(m.outputs) - 1
+
+		return nil
+	}
 }

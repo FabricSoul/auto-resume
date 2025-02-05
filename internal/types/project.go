@@ -175,3 +175,40 @@ func (pm *ProjectManager) LoadProjects() error {
 	// TODO: Implement loading projects from disk
 	return nil
 }
+
+func (pm *ProjectManager) GetModels() []AIModel {
+	data, err := os.ReadFile(pm.configPath)
+	if err != nil {
+		return []AIModel{}
+	}
+
+	var config Config
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return []AIModel{}
+	}
+
+	return config.Models
+}
+
+func (pm *ProjectManager) SaveModels(models []AIModel) error {
+	data, err := os.ReadFile(pm.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	var config Config
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Update models in the config
+	config.Models = models
+
+	newData, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.WriteFile(pm.configPath, newData, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
+}

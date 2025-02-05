@@ -16,6 +16,7 @@ type MainModel struct {
 	splashScreenModel *SplashModel
 	newProjectModel   *NewProjectModel
 	errorModel        *ErrorModel
+	llmManagerModel   *LLMManagerModel
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
@@ -69,6 +70,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.splashScreenModel = NewSplashModel(m.projects)
 			}
 			m.activeModel = m.splashScreenModel
+		case types.StateLLMManager:
+			if m.llmManagerModel == nil {
+				m.llmManagerModel = NewLLMManagerModel(m.projects)
+			}
+			m.activeModel = m.llmManagerModel
 		}
 	}
 

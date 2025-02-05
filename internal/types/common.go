@@ -11,6 +11,7 @@ const (
 	StateProjectList
 	StateProjectOverview
 	StateSettings
+	StateLLMManager
 )
 
 type Model interface {

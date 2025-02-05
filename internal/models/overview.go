@@ -41,6 +41,12 @@ func (m *SplashModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					To: types.StateNewProject,
 				}
 			}
+		case "M":
+			return m, func() tea.Msg {
+				return types.TransitionMsg{
+					To: types.StateLLMManager,
+				}
+			}
 		case "up", "k":
 			if m.selectedIndex > 0 {
 				m.selectedIndex--
@@ -88,7 +94,7 @@ func (m *SplashModel) View() string {
 	}
 
 	// Help section
-	help := ui.Help.Render("n: New Project • q: Quit • ↑/↓: Navigate")
+	help := ui.Help.Render("n: New Project • M: Manage Models • q: Quit • ↑/↓: Navigate")
 
 	// Layout sections
 	leftSection := ui.BaseList.Width(listWidth).Height(m.height - 4).Render(projectsList)

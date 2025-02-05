@@ -3,6 +3,7 @@ package models
 
 import (
 	"github.com/FabricSoul/auto-resume/internal/types"
+	"github.com/FabricSoul/auto-resume/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -17,6 +18,10 @@ type MainModel struct {
 	newProjectModel   *NewProjectModel
 	errorModel        *ErrorModel
 	llmManagerModel   *LLMManagerModel
+	projectModel      *ProjectDetailModel
+	floatModel        tea.Model
+	showFloat         bool
+	isEditing         bool // Global editing state
 }
 
 func NewMainModel(pm *types.ProjectManager) *MainModel {
@@ -35,22 +40,29 @@ func (m *MainModel) Init() tea.Cmd {
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	// Handle error messages first
 	switch msg := msg.(type) {
-	case types.ErrorMsg:
-		m.errorModel.SetError(msg.Error)
+	case types.ShowFloatInputMsg:
+		m.floatModel = NewFloatInputModel(msg.Prompt, msg.InitialValue, msg.Callback)
+		m.showFloat = true
+		m.isEditing = true
 		return m, nil
-	case tea.KeyMsg:
-		// Allow error dismissal from any screen if error is visible
-		if m.errorModel.visible {
-			if msg.Type == tea.KeyEsc || msg.Type == tea.KeyEnter {
-				m.errorModel.visible = false
-				return m, nil
-			}
-			return m, nil
-		}
+	case types.FloatDismissMsg:
+		m.showFloat = false
+		m.isEditing = false
+		return m, nil
+	}
+
+	if m.showFloat {
+		var cmd tea.Cmd
+		m.floatModel, cmd = m.floatModel.Update(msg)
+		return m, cmd
+	}
+
+	if m.errorModel.visible {
+		var cmd tea.Cmd
+		newModel, cmd := m.errorModel.Update(msg)
+		m.errorModel = newModel.(*ErrorModel)
+		return m, cmd
 	}
 
 	// Handle state transitions
@@ -75,17 +87,30 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.llmManagerModel = NewLLMManagerModel(m.projects)
 			}
 			m.activeModel = m.llmManagerModel
+		case types.StateProjectOverview:
+			if m.projectModel == nil {
+				project := msg.Params.(types.Project)
+				m.projectModel = NewProjectDetailModel(project.Path, m.projects)
+			}
+			m.activeModel = m.projectModel
 		}
 	}
 
 	// Update active model
+	var cmd tea.Cmd
 	m.activeModel, cmd = m.activeModel.Update(msg)
 	return m, cmd
 }
 
 func (m *MainModel) View() string {
-	if m.errorModel.visible {
-		return m.errorModel.View()
+	var content string
+	if m.showFloat {
+		content = m.floatModel.View()
+	} else if m.errorModel.visible {
+		content = m.errorModel.View()
+	} else {
+		content = m.activeModel.View()
 	}
-	return m.activeModel.View()
+	// Wrap the view with the centralized AppBackground style.
+	return ui.AppBackground.Render(content)
 }

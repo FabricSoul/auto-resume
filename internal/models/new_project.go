@@ -8,16 +8,15 @@ import (
 )
 
 type NewProjectModel struct {
-	project     *types.ProjectManager
 	projectName string
 	width       int
 	height      int
+	projects    *types.ProjectManager
 }
 
 func NewProjectScreen(pm *types.ProjectManager) *NewProjectModel {
 	return &NewProjectModel{
-		project:     pm,
-		projectName: "",
+		projects: pm,
 	}
 }
 
@@ -30,65 +29,50 @@ func (m *NewProjectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		switch msg.String() {
+		case "i":
 			return m, func() tea.Msg {
-				return types.TransitionMsg{
-					To: types.StateSplash,
+				return types.ShowFloatInputMsg{
+					Prompt:       "Enter Project Name",
+					InitialValue: m.projectName,
+					Callback: func(value string) {
+						m.projectName = value
+					},
 				}
 			}
-
-		case tea.KeyEnter:
+		case "esc":
+			return m, func() tea.Msg {
+				return types.TransitionMsg{To: types.StateSplash}
+			}
+		case "enter":
 			if m.projectName == "" {
 				return m, func() tea.Msg {
-					return types.ErrorMsg{
-						Error: types.ErrEmptyProjectName,
-					}
+					return types.ErrorMsg{Error: types.ErrEmptyProjectName}
 				}
 			}
-
-			if err := m.project.AddProject(m.projectName); err != nil {
+			if err := m.projects.CreateProject(m.projectName); err != nil {
 				return m, func() tea.Msg {
-					return types.ErrorMsg{
-						Error: err,
-					}
+					return types.ErrorMsg{Error: err}
 				}
 			}
-
 			return m, func() tea.Msg {
-				return types.TransitionMsg{
-					To: types.StateSplash,
-				}
-			}
-
-		case tea.KeyBackspace:
-			if len(m.projectName) > 0 {
-				m.projectName = m.projectName[:len(m.projectName)-1]
-			}
-
-		default:
-			if msg.Type == tea.KeyRunes {
-				m.projectName += string(msg.Runes)
+				return types.TransitionMsg{To: types.StateSplash}
 			}
 		}
 	}
-
 	return m, nil
 }
 
 func (m *NewProjectModel) View() string {
 	content := ui.Title.Render("Create New Project") + "\n\n"
 	content += "Enter project name:\n"
-	content += ui.Input.Render(m.projectName + "█")
+	content += ui.Input.Render(m.projectName)
 
-	help := ui.Help.Render("enter: create • esc: cancel")
+	help := ui.Help.Render("i: edit • enter: create • esc: cancel")
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		content,
-		"\n",
-		help,
-	)
+	mainContent := ui.BaseDetails.Width(m.width / 2).Render(content)
+	joined := ui.JoinedContainer.Render(lipgloss.JoinVertical(lipgloss.Left, mainContent, help))
+	return joined
+
 }

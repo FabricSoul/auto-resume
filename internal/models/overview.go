@@ -55,6 +55,16 @@ func (m *SplashModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedIndex < len(m.project.Projects)-1 {
 				m.selectedIndex++
 			}
+		case "enter":
+			if len(m.project.Projects) > 0 {
+				selectedProject := m.project.Projects[m.selectedIndex]
+				return m, func() tea.Msg {
+					return types.TransitionMsg{
+						To:     types.StateProjectOverview,
+						Params: selectedProject,
+					}
+				}
+			}
 		}
 	}
 	return m, nil

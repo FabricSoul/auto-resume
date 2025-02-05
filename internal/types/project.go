@@ -212,3 +212,66 @@ func (pm *ProjectManager) SaveModels(models []AIModel) error {
 	}
 	return nil
 }
+
+// Output represents a single targeted resume output.
+type Output struct {
+	Name            string `toml:"name"`
+	JobDescription  string `toml:"job_description"`
+	GeneratedOutput string `toml:"output"`
+}
+
+// ProjectConfig represents the project-specific configuration that is stored in project.toml.
+type ProjectConfig struct {
+	Name        string   `toml:"name"`
+	Model       string   `toml:"model"`
+	ResumeInput string   `toml:"resume_input"`
+	Outputs     []Output `toml:"outputs"`
+}
+
+// LoadProjectConfig loads the project-specific configuration from project.toml in the given directory.
+func LoadProjectConfig(projectDir string) (ProjectConfig, error) {
+	configPath := filepath.Join(projectDir, "project.toml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ProjectConfig{}, fmt.Errorf("failed to read project config: %w", err)
+	}
+	var config ProjectConfig
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return ProjectConfig{}, fmt.Errorf("failed to parse project config: %w", err)
+	}
+	return config, nil
+}
+
+// SaveProjectConfig saves the given ProjectConfig to project.toml in the specified directory.
+func SaveProjectConfig(projectDir string, config ProjectConfig) error {
+	configPath := filepath.Join(projectDir, "project.toml")
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal project config: %w", err)
+	}
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write project config: %w", err)
+	}
+	return nil
+}
+
+// Add this method to ProjectManager
+func (pm *ProjectManager) CreateProject(name string) error {
+	if name == "" {
+		return ErrEmptyProjectName
+	}
+
+	project := Project{
+		Name: name,
+		Path: filepath.Join(pm.baseDir, "projects", name),
+	}
+
+	// Create project directory
+	if err := os.MkdirAll(project.Path, 0755); err != nil {
+		return fmt.Errorf("failed to create project directory: %w", err)
+	}
+
+	// Add to projects list
+	pm.Projects = append(pm.Projects, project)
+	return nil
+}

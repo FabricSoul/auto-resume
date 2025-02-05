@@ -50,4 +50,19 @@ var (
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(Subtle).
 		Padding(1)
+
+	// AppBackground style to be applied across the entire app.
+	AppBackground = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E1E1E")). // A solid dark color.
+			Foreground(lipgloss.Color("#FFFFFF"))  // Use white text for high contrast.
+
+	FloatBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(Highlight).
+			Padding(2).
+			Width(60)
+
+	JoinedContainer = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E1E1E")).
+			Padding(1)
 )

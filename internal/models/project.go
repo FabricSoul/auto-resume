@@ -3,11 +3,13 @@ package models
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -17,6 +19,17 @@ import (
 	"github.com/FabricSoul/auto-resume/internal/ui"
 	"github.com/teilomillet/gollm"
 )
+
+var debugLog *log.Logger
+
+func init() {
+	// Create or append to debug.log in the current directory
+	f, err := os.OpenFile("debug.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	debugLog = log.New(f, "", log.Ldate|log.Ltime|log.Lshortfile)
+}
 
 const (
 	FocusOverview = iota
@@ -33,6 +46,7 @@ const (
 const (
 	JobFieldName = iota
 	JobFieldDescription
+	JobFieldOutput
 	JobFieldGenerate
 	JobFieldSavePDF
 )
@@ -75,10 +89,18 @@ type ProjectDetailModel struct {
 	selectedLLM      types.AIModel
 	projects         *types.ProjectManager
 	isGenerating     bool
+	showOutputViewer bool
+	outputViewer     textarea.Model
 }
 
 // NewProjectDetailModel constructs and initializes the project detail model.
 func NewProjectDetailModel(projectDir string, pm *types.ProjectManager) *ProjectDetailModel {
+	ta := textarea.New()
+	ta.ShowLineNumbers = true
+	ta.Placeholder = "Generated output will appear here..."
+	ta.SetWidth(80)
+	ta.SetHeight(20)
+
 	// Load existing project config if available.
 	config, err := types.LoadProjectConfig(projectDir)
 	if err != nil {
@@ -109,6 +131,7 @@ func NewProjectDetailModel(projectDir string, pm *types.ProjectManager) *Project
 		overviewField:       OverviewFieldProjectName,
 		jobField:            JobFieldName,
 		projects:            pm,
+		outputViewer:        ta,
 	}
 }
 
@@ -156,6 +179,18 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showLLMSelector = false
 			}
 			return m, nil
+		}
+
+		if m.showOutputViewer {
+			switch msg.String() {
+			case "esc":
+				m.showOutputViewer = false
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.outputViewer, cmd = m.outputViewer.Update(msg)
+				return m, cmd
+			}
 		}
 
 		switch msg.String() {
@@ -313,11 +348,22 @@ func (m *ProjectDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.jobField {
 				case JobFieldGenerate:
 					currentOutput := m.outputs[m.selectedOutputIndex]
-					return m, func() tea.Msg {
-						return m.generateResume(currentOutput.JobDescription)
+					debugLog.Println("Generate button pressed")
+					cmd := m.generateResume(currentOutput.JobDescription)
+					if cmd, ok := cmd.(func() tea.Msg); ok {
+						debugLog.Println("Executing generate command")
+						return m, cmd
 					}
+					debugLog.Println("Failed to get generate command")
+					return m, nil
 				case JobFieldSavePDF:
 					return m, m.saveCurrentOutputToPDF
+				case JobFieldOutput:
+					if len(m.outputs) > 0 {
+						current := m.outputs[m.selectedOutputIndex]
+						m.outputViewer.SetValue(current.GeneratedOutput)
+						m.showOutputViewer = true
+					}
 				}
 			}
 		}
@@ -339,6 +385,20 @@ func (m *ProjectDetailModel) View() string {
 	if m.showLLMSelector {
 		return m.renderLLMSelector()
 	}
+
+	if m.showOutputViewer {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			ui.FloatBox.Render(
+				"Generated Output (ESC to close)\n\n"+
+					m.outputViewer.View(),
+			),
+		)
+	}
+
 	// Divide the screen into two columns.
 	leftWidth := m.width / 2
 	rightWidth := m.width - leftWidth - 2
@@ -433,7 +493,7 @@ func (m *ProjectDetailModel) renderJobSection() string {
 
 	nameField := "Output Name: " + currentOutput.Name
 	descField := "Job Description: " + descPreview
-	outputField := "Generated Output: " + outputPreview
+	outputField := "View Generated Output"
 	generateButton := "[ Generate ]"
 	saveButton := "[ Save to PDF ]"
 
@@ -444,6 +504,8 @@ func (m *ProjectDetailModel) renderJobSection() string {
 			nameField = ui.SelectedItem.Render("► " + nameField)
 		case JobFieldDescription:
 			descField = ui.SelectedItem.Render("► " + descField)
+		case JobFieldOutput:
+			outputField = ui.SelectedItem.Render("► " + outputField)
 		case JobFieldGenerate:
 			generateButton = ui.SelectedItem.Render("► " + generateButton)
 		case JobFieldSavePDF:
@@ -529,40 +591,46 @@ type GollmResponse struct {
 
 // Add this method to ProjectDetailModel
 func (m *ProjectDetailModel) generateResume(jobDescription string) tea.Msg {
+	debugLog.Println("Starting generateResume")
+
 	if m.isGenerating {
-		return nil // Prevent multiple generations at once
+		debugLog.Println("Already generating, returning nil")
+		return nil
 	}
 
 	m.isGenerating = true
 	return func() tea.Msg {
-		// Always reset the generating state, even if there's an error
 		defer func() {
 			m.isGenerating = false
 		}()
 
+		debugLog.Println("Checking LLM options")
 		if len(m.llmOptions) == 0 || m.selectedLLMIndex >= len(m.llmOptions) {
 			return types.ErrorMsg{Error: errors.New("no LLM model selected")}
 		}
 
 		selectedModel := m.llmOptions[m.selectedLLMIndex]
+		debugLog.Printf("Selected model: %+v", selectedModel)
 
-		// Load project config to get resume input
-		config, err := types.LoadProjectConfig(m.projectDir)
-		if err != nil {
-			return types.ErrorMsg{Error: fmt.Errorf("failed to load project config: %w", err)}
-		}
-
-		// Create a new LLM instance with debug logging
+		debugLog.Println("Creating LLM instance")
 		llm, err := gollm.NewLLM(
 			gollm.SetProvider(selectedModel.Provider),
 			gollm.SetModel(selectedModel.Model),
 			gollm.SetAPIKey(selectedModel.APIKey),
+			gollm.SetTimeout(99*time.Minute),
+			gollm.SetMaxTokens(100000), // Increase max response length
+			gollm.SetTemperature(0.7),  // Adjust creativity (0.0-1.0)
+			gollm.SetMemory(100000),    // Increase context window
 		)
 		if err != nil {
+			debugLog.Printf("LLM creation error: %v", err)
 			return types.ErrorMsg{Error: fmt.Errorf("failed to create LLM instance: %w", err)}
 		}
 
-		// Prepare the prompt
+		ctx, cancel := context.WithTimeout(context.Background(), 99*time.Minute)
+		defer cancel()
+
+		debugLog.Println("Preparing prompt")
 		promptText := `You are a professional resume writer. Your task is to modify the given resume to better target a specific job description.
 Follow these rules:
 1. Keep the same LaTeX format
@@ -579,13 +647,13 @@ Job Description:
 
 Please provide the modified resume in LaTeX format.`
 
-		promptText = fmt.Sprintf(promptText, config.ResumeInput, jobDescription)
+		promptText = fmt.Sprintf(promptText, m.resumeInput, jobDescription)
 		prompt := gollm.NewPrompt(promptText)
 
-		// Generate response with context and error handling
-		ctx := context.Background()
+		debugLog.Println("Calling LLM Generate")
 		response, err := llm.Generate(ctx, prompt)
 		if err != nil {
+			debugLog.Printf("Generation error: %v", err)
 			// Handle the error based on the error message
 			errMsg := err.Error()
 			switch {
@@ -614,6 +682,11 @@ Please provide the modified resume in LaTeX format.`
 			GeneratedOutput: response,
 		}
 
+		config, err := types.LoadProjectConfig(m.projectDir)
+		if err != nil {
+			return types.ErrorMsg{Error: fmt.Errorf("failed to load project config: %w", err)}
+		}
+
 		config.Outputs = append(config.Outputs, newOutput)
 		if err := types.SaveProjectConfig(m.projectDir, config); err != nil {
 			return types.ErrorMsg{Error: fmt.Errorf("failed to save project config: %w", err)}
@@ -624,6 +697,7 @@ Please provide the modified resume in LaTeX format.`
 		m.selectedOutputIndex = len(m.outputs) - 1
 
 		// If we get here, generation was successful
+		debugLog.Printf("Generation complete, response length: %d", len(response))
 		return types.GenerationCompleteMsg{} // Add this new message type
 	}
 }
